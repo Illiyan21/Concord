@@ -1,0 +1,15 @@
+{
+  "name": "concord",
+  "version": "1.0.0",
+  "description": "P2P Communication Platform - Decentralized Discord Alternative",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "install-all": "npm install && npm install --prefix packages/server && npm install --prefix packages/web",
+    "server": "npm --prefix packages/server run dev",
+    "web": "npm --prefix packages/web run dev",
+    "start": "npm run server & npm run web"
+  }
+}

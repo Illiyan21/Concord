@@ -1,0 +1,29 @@
+{
+  "server": {
+    "name": "My Concord Server",
+    "port": 3000,
+    "password": "",
+    "mode": "self-hosted",
+    "cloudRelayUrl": "https://concord-relay-production.up.railway.app",
+    "announceIp": ""
+  },
+  "media": {
+    "maxVideoBitrate": 2500000,
+    "maxScreenShareBitrate": 5000000,
+    "maxAudioBitrate": 128000,
+    "maxFileSizeMB": 500,
+    "tempFileExpiryMinutes": 60
+  },
+  "invite": {
+    "enabled": true,
+    "linkExpiryHours": 24
+  },
+  "channels": [
+    { "id": "general", "name": "general", "type": "text" },
+    { "id": "off-topic", "name": "off-topic", "type": "text" }
+  ],
+  "voiceChannels": [
+    { "id": "call-1", "name": "General Voice" },
+    { "id": "call-2", "name": "Gaming" }
+  ]
+}

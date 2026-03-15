@@ -1,0 +1,22 @@
+{
+  "name": "concord-server",
+  "version": "3.0.0",
+  "description": "Concord Communication Server",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "socket.io-client": "^4.7.2",
+    "cors": "^2.8.5",
+    "uuid": "^9.0.1",
+    "multer": "^1.4.5-lts.1",
+    "mediasoup": "^3.14.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
