@@ -9,6 +9,7 @@ function GroupCall({ socket, currentUser, channel, onLeave, onRegisterSignalHand
   const peersRef = useRef({});
   const timerRef = useRef(null);
   const pendingOffersRef = useRef([]); // offers that arrived before mic was ready
+  const hasJoinedRef = useRef(false);  // true after our first participants update (prevents glare)
 
   const getInitials = (n) => n ? n.slice(0, 2).toUpperCase() : '??';
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -153,6 +154,27 @@ function GroupCall({ socket, currentUser, channel, onLeave, onRegisterSignalHand
     socket.on('group-call:joined', onJoined);
     socket.on('group-call:left', onLeft);
 
+    // ── Participant list handler — defined in outer scope so cleanup can reference it ──
+    const onParticipants = async (data) => {
+      if (!alive) return;
+      if (data.channelId !== channel.id) return;
+      const incoming = data.participants || [];
+      console.log(`👥 Participants update: [${incoming.join(', ')}]`);
+      setParticipants(incoming);
+
+      if (!hasJoinedRef.current) {
+        // First update = we just joined. Send offers to everyone already there.
+        hasJoinedRef.current = true;
+        const others = incoming.filter(u => u !== currentUser.username);
+        console.log(`📤 We are the newcomer — offering to: [${others.join(', ') || 'nobody'}]`);
+        for (const username of others) {
+          await sendOffer(username);
+        }
+      }
+      // Subsequent updates: if someone else joined, they offer us. If left, onLeft cleans up.
+    };
+    socket.on('group-call:participants', onParticipants);
+
     // ── Get mic FIRST, then join the channel ──
     const init = async () => {
       // Step 1: Get microphone
@@ -179,19 +201,7 @@ function GroupCall({ socket, currentUser, channel, onLeave, onRegisterSignalHand
         await handleOffer(from, signal);
       }
 
-      // Step 3: Listen for participant list from server
-      socket.once('group-call:participants', async (data) => {
-        if (!alive) return;
-        const others = data.participants.filter(u => u !== currentUser.username);
-        console.log(`👥 Channel has: [${data.participants.join(', ')}], connecting to: [${others.join(', ') || 'nobody'}]`);
-        setParticipants(data.participants);
-        // We are the newcomer — send offers to everyone already there
-        for (const username of others) {
-          await sendOffer(username);
-        }
-      });
-
-      // Step 4: Tell server we joined (triggers participants list back + joined broadcast to others)
+      // Step 3: Tell server we joined — server broadcasts full participant list to all
       console.log(`🚀 Joining channel: ${channel.id}`);
       socket.emit('group-call:join', {
         channelId: channel.id,
@@ -205,7 +215,9 @@ function GroupCall({ socket, currentUser, channel, onLeave, onRegisterSignalHand
       alive = false;
       socket.off('group-call:joined', onJoined);
       socket.off('group-call:left', onLeft);
-      if (timerRef.current) clearInterval(timerRef.current);
+      socket.off('group-call:participants', onParticipants);
+      // handleLeave may have already cleaned these up — guard against double-close
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       Object.values(peersRef.current).forEach(pc => pc.close());
       peersRef.current = {};
       if (streamRef.current) {
@@ -217,8 +229,21 @@ function GroupCall({ socket, currentUser, channel, onLeave, onRegisterSignalHand
   }, []);
 
   const handleLeave = () => {
+    console.log('[GroupCall] handleLeave called');
     socket.emit('group-call:leave', { channelId: channel.id, username: currentUser.username });
-    onLeave();
+    console.log('[GroupCall] group-call:leave emitted, starting cleanup...');
+    // Clean up locally BEFORE calling onLeave so the cleanup in useEffect
+    // doesn't double-close or trigger anything on the socket
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    Object.values(peersRef.current).forEach(pc => pc.close());
+    peersRef.current = {};
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    console.log('[GroupCall] calling onLeave()...');
+    onLeave(); // just hides the UI — does NOT touch the socket
+    console.log('[GroupCall] onLeave() returned');
   };
 
   const handleToggleMute = () => {

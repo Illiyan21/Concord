@@ -106,8 +106,10 @@ class TunnelSocket extends EventEmitter {
   /** Called by server.js when it wants to kick/disconnect a guest */
   disconnect(force) {
     this.connected = false;
-    // Tell relay to disconnect that guest
-    this._relay.emit('tunnel:disconnectGuest', { guestId: this.id });
+    if (force) {
+      // Hard disconnect (kick/ban) — tell relay to drop the guest's socket
+      this._relay.emit('tunnel:disconnectGuest', { guestId: this.id });
+    }
     this._io._removeSocket(this.id);
     this.emit_local('disconnect');
   }

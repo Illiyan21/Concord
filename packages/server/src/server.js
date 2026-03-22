@@ -243,16 +243,20 @@ io.on('connection', (socket) => {
   socket.on('group-call:join', (data) => {
     const user = users.get(socket.id); if (!user) return;
     const vc = channelMgr.getVoiceChannel(data.channelId); if (!vc) return;
-    const existing = [...vc.members];
     channelMgr.joinVoiceChannel(data.channelId, data.username);
-    socket.emit('group-call:participants', { channelId: data.channelId, participants: [...existing, data.username] });
-    io.emit('voice:joined',      { channelId: data.channelId, username: data.username });
-    io.emit('group-call:joined', { channelId: data.channelId, username: data.username });
+    const allMembers = [...vc.members]; // snapshot AFTER joining
+    // Broadcast full participant list to ALL users so no one misses a join
+    io.emit('group-call:participants', { channelId: data.channelId, participants: allMembers });
+    io.emit('voice:joined',            { channelId: data.channelId, username: data.username });
   });
   socket.on('group-call:leave', (data) => {
     channelMgr.leaveVoiceChannel(data.channelId, data.username);
-    io.emit('voice:left',      { channelId: data.channelId, username: data.username });
-    io.emit('group-call:left', { channelId: data.channelId, username: data.username });
+    const vc = channelMgr.getVoiceChannel(data.channelId);
+    const remaining = vc ? [...vc.members] : [];
+    // Broadcast full participant list AND left event so everyone stays in sync
+    io.emit('group-call:participants', { channelId: data.channelId, participants: remaining });
+    io.emit('group-call:left',         { channelId: data.channelId, username: data.username });
+    io.emit('voice:left',              { channelId: data.channelId, username: data.username });
   });
 
   // ── WATCH TOGETHER ──────────────────────────────────────────────

@@ -87,9 +87,31 @@ class TunnelClientSocket extends EventTarget {
     this._relay.onAny((event, data) => {
       // Filter out relay-internal events
       if (event.startsWith('tunnel:') || event.startsWith('relay:')) return;
+      // Cache user info so relay ping can report it correctly
+      if (event === 'auth:success' && data?.user) {
+        this._userId   = data.user.userId;
+        this._username = data.user.username;
+      }
       // Deliver to handlers registered via .on()
       this._fire(event, data);
     });
+
+    // Relay-level ping — measures client↔relay latency only
+    // This replaces the server-measured ping which goes through 4 hops
+    this._relay.on('relay:pong', (data) => {
+      const ping = Date.now() - data.t;
+      this._fire('ping:updated', {
+        userId:   this._userId,
+        username: this._username,
+        ping,
+      });
+    });
+
+    setInterval(() => {
+      if (this._relay.connected && this._userId) {
+        this._relay.emit('relay:ping', { t: Date.now() });
+      }
+    }, 5000);
 
     this._relay.on('tunnel:serverDown', (data) => {
       console.warn('[TunnelClient] Server went down:', data.message);
@@ -97,9 +119,24 @@ class TunnelClientSocket extends EventTarget {
       this._fire('disconnect');
     });
 
+    // Don't immediately fire disconnect on relay drop — relay reconnects automatically.
+    // Only fire disconnect if we can't reconnect within 15 seconds.
+    let _disconnectTimer = null;
     this._relay.on('disconnect', () => {
       this.connected = false;
-      this._fire('disconnect');
+      console.warn('[TunnelClient] Relay disconnected — waiting for reconnect...');
+      _disconnectTimer = setTimeout(() => {
+        console.warn('[TunnelClient] Could not reconnect — logging out');
+        this._fire('disconnect');
+      }, 15000);
+    });
+
+    this._relay.on('connect', () => {
+      if (_disconnectTimer) {
+        clearTimeout(_disconnectTimer);
+        _disconnectTimer = null;
+        console.log('[TunnelClient] Relay reconnected — re-joining server');
+      }
     });
 
     this._relay.on('connect_error', (err) => {
@@ -119,6 +156,15 @@ class TunnelClientSocket extends EventTarget {
     if (!this._handlers[event]) return this;
     this._handlers[event] = this._handlers[event].filter(h => h !== fn);
     return this;
+  }
+
+  /** Register a one-time handler — same as sock.once(event, fn) */
+  once(event, fn) {
+    const wrapper = (data) => {
+      fn(data);
+      this.off(event, wrapper);
+    };
+    return this.on(event, wrapper);
   }
 
   /** Emit an event to the host server — same as sock.emit(event, data) */
